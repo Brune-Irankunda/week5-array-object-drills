@@ -1,14 +1,16 @@
+
 import { orders } from "./data.js";
 
 const ORIGINAL = JSON.stringify(orders);
 
+// Helper: calculate the total for one order
 export const orderTotal = ({ items }) =>
   items.reduce((sum, { price, qty }) => sum + price * qty, 0);
 
 // 1. Array of all order IDs
 export const orderIds = orders.map(({ id }) => id);
 
-// 2. Array of customer names (duplicates allowed)
+// 2. Customer names (duplicates allowed)
 export const customerNames = orders.map(
   ({ customer: { name } }) => name
 );
@@ -23,10 +25,10 @@ export const gasaboOrders = orders.filter(
   ({ customer: { district } }) => district === "Gasabo"
 );
 
-// 5. Find the order with ID 106
+// 5. Find order ID 106
 export const order106 = orders.find(({ id }) => id === 106);
 
-// 6. Does any order have a rating of 3 or lower?
+// 6. Any rating of 3 or lower?
 export const hasLowRating = orders.some(
   ({ rating }) => rating !== null && rating <= 3
 );
@@ -37,9 +39,7 @@ export const pendingOrdersUnrated = orders
   .every(({ rating }) => rating === null);
 
 // 8. Unique customer names
-export const uniqueCustomerNames = [
-  ...new Set(customerNames)
-];
+export const uniqueCustomerNames = [...new Set(customerNames)];
 
 // 9. Add a total to every order
 export const ordersWithTotals = orders.map(order => ({
@@ -47,20 +47,21 @@ export const ordersWithTotals = orders.map(order => ({
   total: orderTotal(order)
 }));
 
-// 10. Total revenue from delivered orders
-export const deliveredRevenue = orders
-  .filter(({ status }) => status === "delivered")
-  .reduce((sum, order) => sum + orderTotal(order), 0);
-
-// 11. Average rating, ignoring null ratings
-export const averageRating = Number(
-  (
-    orders
-      .filter(({ rating }) => rating !== null)
-      .reduce((sum, { rating }) => sum + rating, 0) /
-    orders.filter(({ rating }) => rating !== null).length
-  ).toFixed(1)
+// 10. Revenue from delivered orders
+export const deliveredRevenue = deliveredOrders.reduce(
+  (sum, order) => sum + orderTotal(order),
+  0
 );
+
+// 11. Average rating, ignoring null values
+const ratedOrders = orders.filter(({ rating }) => rating !== null);
+
+export const averageRating = ratedOrders.length
+  ? Number((
+      ratedOrders.reduce((sum, { rating }) => sum + rating, 0) /
+      ratedOrders.length
+    ).toFixed(1))
+  : 0;
 
 // 12. Total quantity of Brochettes sold
 export const brochettesSold = orders
@@ -68,88 +69,72 @@ export const brochettesSold = orders
   .filter(({ name }) => name === "Brochette")
   .reduce((sum, { qty }) => sum + qty, 0);
 
-// 13. Single most expensive order
+// 13. Most expensive order
 export const mostExpensiveOrder = orders.reduce(
-  (mostExpensive, order) =>
-    orderTotal(order) > orderTotal(mostExpensive)
-      ? order
-      : mostExpensive
+  (highest, order) =>
+    orderTotal(order) > orderTotal(highest) ? order : highest
 );
 
 // 14. Number of orders per status
-export const ordersPerStatus = orders.reduce(
-  (counts, { status }) => ({
-    ...counts,
-    [status]: (counts[status] ?? 0) + 1
-  }),
+export const ordersPerStatus = orders.reduce((counts, { status }) => {
+  counts[status] = (counts[status] ?? 0) + 1;
+  return counts;
+}, {});
+
+// 15. Revenue by district from delivered orders
+export const revenueByDistrict = deliveredOrders.reduce(
+  (revenue, order) => {
+    const district = order.customer.district;
+    revenue[district] = (revenue[district] ?? 0) + orderTotal(order);
+    return revenue;
+  },
   {}
 );
 
-// ============================================
-// STATION 3: GROUPING AND RANKING
-// ============================================
-
-// 15. Revenue per district from delivered orders
-export const revenueByDistrict = orders
-  .filter(({ status }) => status === "delivered")
-  .reduce((revenue, order) => {
-    const district = order.customer.district;
-
-    return {
-      ...revenue,
-      [district]:
-        (revenue[district] ?? 0) + orderTotal(order)
-    };
-  }, {});
-
-// 16. Group orders by date and calculate statistics
-const groupedByDate = Object.groupBy(
-  orders,
-  ({ date }) => date
-);
+// 16. Daily order summary
+const groupedByDate = Object.groupBy(orders, ({ date }) => date);
 
 export const dailySummary = Object.entries(groupedByDate).map(
   ([date, dailyOrders]) => ({
     date,
     count: dailyOrders.length,
     revenue: dailyOrders.reduce(
-      (sum, order) => sum + orderTotal(order), 0
+      (sum, order) => sum + orderTotal(order),
+      0
     )
   })
 );
 
 // 17. Top 3 best-selling items by quantity
 export const topSellingItems = Object.entries(
-  orders
-    .flatMap(({ items }) => items)
-    .reduce((totals, { name, qty }) => ({
-      ...totals,
-      [name]: (totals[name] ?? 0) + qty
-    }), {})
+  orders.flatMap(({ items }) => items).reduce((totals, { name, qty }) => {
+    totals[name] = (totals[name] ?? 0) + qty;
+    return totals;
+  }, {})
 )
   .map(([name, qty]) => ({ name, qty }))
-  .toSorted((a, b) => b.qty - a.qty)
+  .sort((a, b) => b.qty - a.qty)
   .slice(0, 3);
 
-// 18. Each customer's number of orders and total spent
+// 18. Each customer's order count and total spent
 export const customerSummary = Object.entries(
   orders.reduce((customers, order) => {
     const name = order.customer.name;
 
-    return {
-      ...customers,
-      [name]: {
-        orders: (customers[name]?.orders ?? 0) + 1,
-        spent:
-          (customers[name]?.spent ?? 0) + orderTotal(order)
-      }
-    };
+    if (!customers[name]) {
+      customers[name] = { orders: 0, spent: 0 };
+    }
+
+    customers[name].orders += 1;
+    customers[name].spent += orderTotal(order);
+
+    return customers;
   }, {})
 )
   .map(([name, summary]) => ({ name, ...summary }))
-  .toSorted((a, b) => b.spent - a.spent);
+  .sort((a, b) => b.spent - a.spent);
 
-// 19. Menu price list
+// 19. Menu price list (first recorded price for each item)
 export const menuPrices = Object.fromEntries(
   orders
     .flatMap(({ items }) => items)
@@ -159,7 +144,6 @@ export const menuPrices = Object.fromEntries(
         entries.findIndex(([itemName]) => itemName === name) === index
     )
 );
-
 
 // 20. Mark a pending order as delivered
 export const markDelivered = (orders, id) =>
@@ -210,12 +194,13 @@ export const applyDiscount = (orders, percent) =>
     }))
   }));
 
+// Verify original data was not mutated
 console.log(
   "Original data unchanged:",
   JSON.stringify(orders) === ORIGINAL
 );
 
-
+// Display exercise results
 console.log("1. Order IDs:", orderIds);
 console.log("2. Customer names:", customerNames);
 console.log("3. Delivered orders:", deliveredOrders.length);
@@ -235,3 +220,13 @@ console.log("16. Daily summary:", dailySummary);
 console.log("17. Top selling items:", topSellingItems);
 console.log("18. Customer summary:", customerSummary);
 console.log("19. Menu prices:", menuPrices);
+
+// Exercises 20–25 demonstration
+console.log("20. Mark 102 delivered:", markDelivered(orders, 102));
+console.log("21. Rate order 101:", rateOrder(orders, 101, 5));
+console.log("22. Change district:", changeDistrict(orders, 101, "Kicukiro"));
+console.log("23. Add item:", addItem(orders, 101, {
+  name: "Juice", price: 1500, qty: 1
+}));
+console.log("24. Remove cancelled:", removeCancelled(orders));
+console.log("25. Apply 10% discount:", applyDiscount(orders, 10));
